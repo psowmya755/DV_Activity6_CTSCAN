@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>In-Class Activity: Manipulable View – CT Scan Images</title>
+
+  <!-- D3 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div>
+      <h1>CT Scan Images</h1>
+    </div>
+
+    <!-- Sliders -->
+    <div class="slider">
+      <label for="binCount">Bin Count</label>
+      <input type="range" id="binCount" min="2" max="30" value="10" step="1">
+
+      <label for="minThreshold">Min Threshold</label>
+      <input type="range" id="minThreshold">
+
+      <label for="maxThreshold">Max Threshold</label>
+      <input type="range" id="maxThreshold">
+    </div>
+
+    <hr>
+
+    <!-- Loading feedback -->
+    <div id="loading">
+      <div class="spinner"></div>
+      Loading...
+    </div>
+
+    <!-- Main layout: file list + SVG -->
+    <div class="main">
+      <div id="files_container">
+        <select id="files" name="file" size="10" multiple="multiple"></select>
+      </div>
+      <div class="canvas">
+        <svg viewBox="0 0 256 256"></svg>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const svg = d3.select("svg");
+    const path = d3.geoPath();
+
+    const m = 256;
+    const n = 256;
+
+    let values = [];
+    let minValue, maxValue;
+    let colorScale;
+
+    let currentBinCount = 10;
+    let currentMin = 0;
+    let currentMax = 1;
+
+    const binSlider = document.getElementById("binCount");
+    const minSlider = document.getElementById("minThreshold");
+    const maxSlider = document.getElementById("maxThreshold");
+    const loadingDiv = document.getElementById("loading");
+
+    function showLoading(show) {
+      loadingDiv.style.display = show ? "block" : "none";
+    }
+
+    // -------- DRAW CONTOURS ----------
+    function draw() {
+      if (!values.length) return;
+      if (currentMax <= currentMin) return;
+
+      svg.selectAll(".contours").remove();
+
+      const step = (currentMax - currentMin) / currentBinCount;
+      const thresholds = d3.range(currentMin, currentMax, step);
+
+      const contourGenerator = d3.contours()
+        .size([m, n])
+        .thresholds(thresholds);
+
+      const contours = contourGenerator(values);
+
+      const g = svg.append("g").attr("class", "contours");
+
+      g.selectAll("path")
+        .data(contours)
+        .enter()
+        .append("path")
+        .attr("d", path)
+        .attr("fill", d => colorScale(d.value))
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.1)
+        .attr("stroke-linejoin", "round");
+    }
+
+    // -------- LOAD ONE FILE ----------
+    function loadFile(fileName) {
+      showLoading(true);
+
+      d3.json("./dicomData/" + fileName).then(data => {
+        showLoading(false);
+        svg.selectAll("*").remove();
+
+        values = [];
+        data.forEach(row => row.forEach(d => values.push(+d)));
+
+        const extent = d3.extent(values);
+        minValue = extent[0];
+        maxValue = extent[1];
+
+        currentBinCount = +binSlider.value;
+        currentMin = minValue;
+        currentMax = maxValue;
+
+        minSlider.min = minValue;
+        minSlider.max = maxValue;
+        minSlider.value = currentMin;
+
+        maxSlider.min = minValue;
+        maxSlider.max = maxValue;
+        maxSlider.value = currentMax;
+
+        // *** UPDATED COLOR SCALE (blue → teal → yellow) ***
+        colorScale = d3.scaleLinear()
+          .domain([
+            minValue,
+            minValue + (maxValue - minValue) * 0.33,
+            minValue + (maxValue - minValue) * 0.66,
+            maxValue
+          ])
+          .range([
+            "#0d1a50",  // deep navy blue (background)
+           "#1f3c88",  // medium blue
+          "#2b83ba",  // cyan/teal
+             "#abdda4",  // greenish
+    "#f7e562",  // yellow
+    "#fdae61"   // light orange (not dark red!)
+
+          ])
+          .interpolate(d3.interpolateHcl);
+
+        draw();
+      }).catch(err => {
+        showLoading(false);
+        console.error("ERROR loading JSON:", err);
+        alert(
+          "Could not load " + fileName +
+          ".\n\nCheck that:\n1) dicomData folder is next to activity.html\n" +
+          "2) You opened with Live Server (http://...), not file:///."
+        );
+      });
+    }
+
+    // -------- SLIDERS ----------
+    binSlider.addEventListener("input", function () {
+      currentBinCount = +this.value;
+      draw();
+    });
+
+    minSlider.addEventListener("input", function () {
+      currentMin = +this.value;
+      if (currentMin >= currentMax) {
+        currentMin = currentMax - 1;
+        this.value = currentMin;
+      }
+      draw();
+    });
+
+    maxSlider.addEventListener("input", function () {
+      currentMax = +this.value;
+      if (currentMax <= currentMin) {
+        currentMax = currentMin + 1;
+        this.value = currentMax;
+      }
+      draw();
+    });
+
+    // -------- FILE LIST ----------
+    function populateFileList() {
+      const filesData = [
+        "brain_001.dcm.json", "brain_002.dcm.json",
+        "brain_003.dcm.json", "brain_004.dcm.json",
+        "brain_005.dcm.json", "brain_006.dcm.json",
+        "brain_007.dcm.json", "brain_008.dcm.json",
+        "brain_009.dcm.json", "brain_010.dcm.json",
+        "brain_011.dcm.json", "brain_012.dcm.json",
+        "brain_013.dcm.json", "brain_014.dcm.json",
+        "brain_015.dcm.json", "brain_016.dcm.json",
+        "brain_017.dcm.json", "brain_018.dcm.json",
+        "brain_019.dcm.json", "brain_020.dcm.json"
+      ];
+
+      const selectElement = d3.select("#files");
+
+      selectElement.selectAll("option")
+        .data(filesData)
+        .enter()
+        .append("option")
+        .text(d => d);
+
+      selectElement.attr("size", filesData.length);
+
+      selectElement.on("change", () => {
+        const selectedFile = selectElement.property("value");
+        loadFile(selectedFile);
+      });
+
+      loadFile(filesData[0]);
+    }
+
+    populateFileList();
+  </script>
+</body>
+</html>
